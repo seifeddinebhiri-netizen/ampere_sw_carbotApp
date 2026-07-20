@@ -1,0 +1,60 @@
+# ============================================================
+#  SECRETS — never commit these. Leaking them is the real risk.
+# ============================================================
+.env
+.env.*
+!.env.example
+
+# Certificates and private keys (mTLS). A leaked CA key lets anyone
+# mint a cert for any VIN. A leaked private key impersonates that client.
+certs/
+*.key
+*.crt
+*.pem
+*.p12
+*.pfx
+
+# Broker password files
+*passwords*.txt
+
+# ============================================================
+#  Database — local data, not source. Contains your seeded users.
+# ============================================================
+*.db
+*.sqlite
+*.sqlite3
+
+# ============================================================
+#  Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environment — huge, machine-specific, rebuilt from requirements.txt
+.venv/
+venv/
+env/
+
+# ============================================================
+#  Editors / OS
+# ============================================================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ============================================================
+#  LaTeX build artifacts (keep the .tex, ignore the rest)
+# ============================================================
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+# note: NOT ignoring *.pdf — you may want the compiled report tracked

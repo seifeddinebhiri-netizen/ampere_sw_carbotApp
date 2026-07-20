@@ -1,0 +1,31 @@
+One scaling note for your manager conversation
+Listing every VIN in an ACL file doesn't scale to millions of cars.
+ Real brokers use patterns — Mosquitto supports %u (username) and %c (client id):
+pattern readwrite vehicle/%u/#
+If each car's broker username is its VIN, that single line confines every car in
+ the fleet to its own topics — no per-car config. Production brokers (EMQX, HiveMQ) 
+ go further and pull ACLs from a database or derive them from the client's mTLS certificate.
+  Worth knowing that the file approach is a dev-scale thing.
+
+
+  1. uvicorn         receives HTTP, hands it to FastAPI
+2. FastAPI         matches the route → routers/car.py:temperature
+3. dependencies    HTTPBearer pulls the token from the header
+                   get_session opens a DB session
+                   get_current_user → decode_access_token (pure math, no DB)
+                                    → auth_service.get_user (loads the User)
+                                    → 401 here if anything's wrong
+4. router          calls car_service.read_temperature(session, user.id)
+5. service         _vehicle_for_user → SELECT ... WHERE owner_id = ?   ← AUTHZ
+                   builds topic "vehicle/TESTVIN123/climate/temperature/request"
+                   calls bus.request(topic)
+6. mqtt            creates a Future, files it under request_id, publishes, awaits
+   ──────────────  cloud broker → bridge → car broker → fake_car
+                   fake_car reads "sensor", publishes response
+   ──────────────  car broker → bridge → cloud broker
+7. mqtt._listen    receives it, pops the Future by request_id, set_result()
+8. mqtt.request    wakes up, returns the payload
+9. service         writes a CommandLog row, returns (vin, value)
+10. router         wraps in TemperatureOut
+11. FastAPI        serialises to JSON
+12. get_session    resumes after its yield → closes the session
