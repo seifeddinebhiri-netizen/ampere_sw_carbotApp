@@ -27,10 +27,41 @@ TOPIC_TEMP_REQUEST  = f"vehicle/{VIN}/climate/temperature/request"
 TOPIC_TEMP_RESPONSE = f"vehicle/{VIN}/climate/temperature/response"
 TOPIC_AC_COMMAND    = f"vehicle/{VIN}/climate/ac/command"
 TOPIC_AC_ACK        = f"vehicle/{VIN}/climate/ac/ack"
+TOPIC_AC_STATE      = f"vehicle/{VIN}/climate/ac/state"     # <-- new broadcast
+
 
 # The car's actual state. In reality this lives in the hardware.
 ac_state = "off"
 
+async def publish_ac_state(client: aiomqtt.Client) -> None:
+    """Broadcast the current AC state.
+ 
+    retain=True so a subscriber that connects LATER immediately gets the current
+    state instead of waiting for the next change. This is how the app can show
+    the right state the moment it opens, without asking.
+ 
+    Note: NO request_id here. This is an unsolicited broadcast, not a reply to
+    anyone. That difference matters on the backend -- state messages are routed
+    by VIN to interested WebSocket clients, not matched to a pending request.
+    """
+    payload = {"state": ac_state}
+    await client.publish(TOPIC_AC_STATE, json.dumps(payload), qos=1, retain=True)
+    print(f"[car] broadcast AC state -> {ac_state}")
+
+async def simulate_spontaneous_changes(client: aiomqtt.Client) -> None:
+    """Every ~20s, flip the AC as if someone pressed the physical button.
+ 
+    This exists so you can SEE unsolicited pushes arrive at the app without
+    touching your phone -- proving the push path, not just command echoes.
+    Remove or lengthen the interval when it gets annoying.
+    """
+    global ac_state
+    while True:
+        await asyncio.sleep(60)
+        ac_state = "on" if ac_state == "off" else "off"
+        print(f"[car] (spontaneous) AC physically toggled -> {ac_state}")
+        await publish_ac_state(client)
+    
 
 async def main():
     global ac_state
@@ -42,7 +73,8 @@ async def main():
         await client.subscribe(TOPIC_TEMP_REQUEST, qos=1)
         await client.subscribe(TOPIC_AC_COMMAND, qos=1)
         print(f"[car] listening for requests and commands (VIN {VIN})")
-
+        await publish_ac_state(client)
+        asyncio.create_task(simulate_spontaneous_changes(client))
         async for message in client.messages:
             try:
                 payload = json.loads(message.payload.decode())
@@ -72,14 +104,15 @@ async def main():
                 if state not in ("on", "off"):
                     ack = {"request_id": request_id, "ok": False,
                            "error": f"unknown state {state!r}"}
+                    await client.publish(TOPIC_AC_ACK, json.dumps(ack), qos=1)
                 else:
                     # "Actuate the AC." The real bridge calls SOME/IP here.
                     await asyncio.sleep(0.5)      # pretend the compressor responds
                     ac_state = state
                     ack = {"request_id": request_id, "ok": True, "state": ac_state}
-                    print(f"[car] AC -> {ac_state}")
-
-                await client.publish(TOPIC_AC_ACK, json.dumps(ack), qos=1)
+                    await client.publish(TOPIC_AC_ACK, json.dumps(ack), qos=1)
+                    print(f"[car] AC -> {ac_state} (via command)")
+                    await publish_ac_state(client)
 
 
 if __name__ == "__main__":

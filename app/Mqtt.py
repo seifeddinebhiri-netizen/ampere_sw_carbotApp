@@ -25,14 +25,21 @@ from app.Config import (
     RESPONSE_TIMEOUT,
 )
 
+from app.ws_registery import registry 
+
 # '+' is a single-level wildcard in the VIN slot: one subscription serves every
 # car, so we never resubscribe as the fleet grows.
 SUBSCRIPTIONS = [
     "vehicle/+/climate/temperature/response",
     "vehicle/+/climate/ac/ack",
+    "vehicle/+/climate/ac/state", 
 ]
 
-
+def _vin_from_topic(topic: str) -> str | None:
+        parts = topic.split("/")
+        if len(parts) >= 2 and parts[0] == "vehicle":
+            return parts[1]
+        return None
 class MqttBus:
     """Owns the connection and the pending-request table.
 
@@ -73,7 +80,12 @@ class MqttBus:
         subscribes (to hear responses) and publishes (to send requests) -- one
         client, both roles.
         """
-        tls = self._tls_params()
+        import sys, asyncio
+        if sys.platform == "win32":
+        # Harmless if already set; guarantees the selector loop is active
+        # by the time we touch aiomqtt's sockets.
+          asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+          tls = self._tls_params()
 
         # Under mTLS the broker takes our identity from the certificate CN
         # (use_identity_as_username), so sending a username/password is
@@ -113,37 +125,45 @@ class MqttBus:
     # --- internals ----------------------------------------------------------
 
     async def _listen(self) -> None:
-        """Read every incoming message, route it to whoever is waiting.
-
-        The only place that iterates client.messages -- aiomqtt permits a single
-        reader, so one listener reads everything and distributes.
-
-        This task must never die: if it does, the server goes deaf. Hence the
-        broad guards below.
-        """
         assert self._client is not None
         async for message in self._client.messages:
+            topic = str(message.topic)
+ 
             try:
                 payload = json.loads(message.payload.decode())
             except (json.JSONDecodeError, UnicodeDecodeError):
-                print(f"[mqtt] non-JSON message on {message.topic}, ignoring")
+                print(f"[mqtt] non-JSON message on {topic}, ignoring")
                 continue
-
+ 
+            # --- STATE broadcasts: forward to WebSocket clients --------------
+            # These are telemetry, not replies. They have no request_id. We
+            # extract the VIN from the topic and hand off to the registry, which
+            # pushes ONLY to sockets whose user owns that VIN.
+            if topic.endswith("/climate/ac/state"):
+                vin = _vin_from_topic(topic)
+                if vin:
+                    await registry.push_to_vin(vin, {
+                        "type": "ac_state",
+                        "vin": vin,
+                        "state": payload.get("state"),
+                    })
+                    print(f"[mqtt->ws] ac_state {vin} = {payload.get('state')}")
+                continue
+ 
+            # --- everything else: the existing request/response correlation --
             request_id = payload.get("request_id")
             if request_id is None:
-                print(f"[mqtt] no request_id on {message.topic}, ignoring")
+                print(f"[mqtt] no request_id on {topic}, ignoring")
                 continue
-
+ 
             future = self._pending.pop(request_id, None)
             if future is None:
-                # Nobody waiting: already timed out, or a duplicate. Dropping is
-                # correct.
                 print(f"[mqtt] unmatched response {request_id}")
                 continue
-
+ 
             if not future.done():
                 future.set_result(payload)
-
+    
     # --- public API ---------------------------------------------------------
 
     async def request(self, topic: str, body: dict | None = None,

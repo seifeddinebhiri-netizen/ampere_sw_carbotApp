@@ -3,13 +3,18 @@
 Run:  uvicorn app.main:app --reload --port 8000
 """
 
-from contextlib import asynccontextmanager
+import asyncio
+import sys
 
-from fastapi import FastAPI
-
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 from app.DataBase.DB import init_db
 from app.Mqtt import bus
 from app.routers import Auth, Car
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from app.routers import ws    
+
 
 
 @asynccontextmanager
@@ -27,7 +32,7 @@ app = FastAPI(title="MyCarBot backend", version="0.2.0", lifespan=lifespan)
 
 app.include_router(Auth.router)
 app.include_router(Car.router)
-
+app.include_router(ws.router)
 
 @app.get("/health", tags=["meta"])
 async def health():

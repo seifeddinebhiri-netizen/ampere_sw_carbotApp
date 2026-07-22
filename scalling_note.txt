@@ -8,7 +8,7 @@ If each car's broker username is its VIN, that single line confines every car in
   Worth knowing that the file approach is a dev-scale thing.
 
 
-  1. uvicorn         receives HTTP, hands it to FastAPI
+1. uvicorn         receives HTTP, hands it to FastAPI
 2. FastAPI         matches the route → routers/car.py:temperature
 3. dependencies    HTTPBearer pulls the token from the header
                    get_session opens a DB session
