@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.routers import ws    
 
+from app.routers import assistant
 
 
 @asynccontextmanager
@@ -33,6 +34,7 @@ app = FastAPI(title="MyCarBot backend", version="0.2.0", lifespan=lifespan)
 app.include_router(Auth.router)
 app.include_router(Car.router)
 app.include_router(ws.router)
+app.include_router(assistant.router)
 
 @app.get("/health", tags=["meta"])
 async def health():

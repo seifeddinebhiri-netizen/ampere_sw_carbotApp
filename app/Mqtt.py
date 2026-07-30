@@ -128,7 +128,6 @@ class MqttBus:
         assert self._client is not None
         async for message in self._client.messages:
             topic = str(message.topic)
- 
             try:
                 payload = json.loads(message.payload.decode())
             except (json.JSONDecodeError, UnicodeDecodeError):
