@@ -6,7 +6,7 @@
 
 ---
 
-## 0. Read this first — the constraints that drive every decision
+## 0. — — the constraints that drive every decision
 
 Three properties of the system decide almost everything downstream:
 
@@ -55,7 +55,7 @@ topic readwrite vehicle/#
 
 **Two valid ways out:**
 
-**Option A (recommended): a natively-clustering broker.**
+**Option A (better): a natively-clustering broker.**
 Replace/augment Mosquitto with EMQX, VerneMQ, HiveMQ, or NanoMQ. These share session/routing state across nodes, so a publish on any node reaches a subscriber on any other node. This removes the need to hand-pin "server X ↔ broker Y." Servers connect to *any* node via a load balancer; the cluster routes internally.
 - *Verify, don't trust these numbers:* these brokers are marketed as handling millions of connections per cluster, but the real ceiling depends on message rate, payload size, TLS overhead, and node sizing. Run a connection-count load test against a representative payload before committing to a node count.
 
@@ -75,15 +75,11 @@ Prefer Option A unless there's a concrete reason the clustering broker can't be 
 
 ---
 
-## Workstream 2 — Edge in front of the brokers (and where CDN actually belongs)
+## Workstream 2 — Edge in front of the brokers
 
-**Correction up front:** a **CDN is the wrong tool for the broker path.** CDNs cache static HTTP at the edge. MQTT is a persistent, bidirectional, stateful TCP connection carrying unique real-time telemetry — nothing is cacheable, and CDNs don't proxy long-lived raw MQTT. A CDN in front of a broker does nothing.
-
-**What actually goes in front of each broker / broker cluster:**
+**What goes in front of each broker / broker cluster:**
 - An **L4 connection load balancer** (NLB / HAProxy / Envoy in TCP mode) to distribute millions of connections and terminate or pass through TLS.
-- Optionally an **MQTT-aware gateway** for connection rate-limiting, backpressure, and auth offload. (This is likely what the original plan called a "payload manager" — that part is sound; just don't call it a CDN and don't expect caching.)
-
-**Where the CDN *is* useful:** in front of the mobile app's static assets, and in front of any cacheable REST responses the backend serves. That's a real optimization — just on a different part of the system.
+- Optionally an **MQTT-aware gateway** for connection rate-limiting, backpressure, and auth offload. 
 
 ---
 
@@ -91,9 +87,8 @@ Prefer Option A unless there's a concrete reason the clustering broker can't be 
 
 **The bug that scaling exposes:** the backend correlates request↔response with an in-memory `request_id → Future` "pending" table. With one backend that's fine. With N replicas behind a load balancer, a car's response is published to MQTT and delivered to *whichever* backend instance holds the matching broker subscription — which may not be the instance that issued the request and holds the Future. Result: the request times out silently even though the car executed the command. This is the *exact* "we don't know" failure the design already tries to handle — but now caused by architecture, not by a lost ack.
 
-**Fix (pick one):**
+**Fix:**
 - **Instance-addressed responses:** include a backend-instance id in the request, and have responses come back on `.../response/<instance-id>` (or a per-instance reply topic) so the reply reaches the issuing instance. Simple, no new infra.
-- **Shared correlation store:** keep pending state in Redis; whichever instance receives the response looks up the request_id and signals the owner (Redis pub/sub or a wake channel). More moving parts, but decouples reply routing from instance identity.
 
 **Also required for the backend to scale:**
 - **Database:** SQLite is single-writer and file-local — it will not serve 10M users. Move to managed PostgreSQL with read replicas. JWT is already stateless (good); refresh tokens live in the DB and scale with it.
@@ -116,11 +111,8 @@ Prefer Option A unless there's a concrete reason the clustering broker can't be 
 4. **Workstream 2 (edge LB / MQTT gateway; CDN for app assets)** — alongside/after Workstream 1.
 5. **Workstream 4 (PKI + command signing)** — parallel security track; gates any production mTLS rollout.
 
----
 
-## Open questions / verify before building
 
-- **Broker choice:** confirm Ampere's platform allows EMQX/VerneMQ/HiveMQ (licensing, approved-software list) before designing around one.
-- **Real benchmarks:** measure connections-per-node with a representative payload and TLS on; don't design node counts from vendor marketing figures.
-- **Colleague's bridge contract (out of scope here but affects topic design):** exact topic strings, matching VIN, and — critically — whether his bridge echoes `request_id` on request→response. If it doesn't, every backend call times out silently regardless of how well the tier scales.
-- **Shard vs cluster decision** (Workstream 1) should be made explicitly and written down, not defaulted into.
+
+## Fututre architecture 
+
