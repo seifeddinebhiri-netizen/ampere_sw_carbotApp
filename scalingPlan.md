@@ -90,6 +90,10 @@ Prefer Option A unless there's a concrete reason the clustering broker can't be 
 **Fix:**
 - **Instance-addressed responses:** include a backend-instance id in the request, and have responses come back on `.../response/<instance-id>` (or a per-instance reply topic) so the reply reaches the issuing instance. Simple, no new infra.
 
+**Pointing limitation**
+- One thing this fix deliberately does not solve: the unsolicited WebSocket push to phones (car-state banners). That's a different routing question — "which replica holds this phone's socket" — and it needs its own answer.
+- The tradeoff we're accepting is durability on crash. If replica A dies after issuing the request but before the response comes back, that response is published to …/response/a1 and nobody is subscribed there anymore — it's lost. But A's HTTP request already failed when the pod died. so i suggest a queuu with handling fail and auto retry
+
 **Also required for the backend to scale:**
 - **Database:** SQLite is single-writer and file-local — it will not serve 10M users. Move to managed PostgreSQL with read replicas. JWT is already stateless (good); refresh tokens live in the DB and scale with it.
 - **App-facing connections:** 10M phones each holding a WebSocket is its own connection-count problem, mirroring the car side. Needs a sticky L4 LB or a dedicated push tier. At true scale, **FCM push becomes necessary, not optional** — you cannot cheaply hold 10M idle WebSockets, so the "system notifications need FCM, scoped out" decision has to be revisited here. WebSocket then becomes the *foreground* channel, FCM the *background* one.
@@ -114,5 +118,5 @@ Prefer Option A unless there's a concrete reason the clustering broker can't be 
 
 
 
-## Fututre architecture 
-
+## Fututre system design 
+<img src="User Authentication Flow-2026-07-30-131026.png" alt="System Architecture" width="1250" heigth ="300">
