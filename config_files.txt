@@ -1,0 +1,53 @@
+cloud-acl.txt:
+# ── Vehicles ──────────────────────────────────────────────
+# Each authenticated car may read/write ONLY its own VIN subtree.
+# %u = MQTT username. With `use_identity_as_username true`, %u is the
+# client-cert CN, which MUST equal the bare VIN (CN=TESTVIN123, NOT
+# car_TESTVIN123) so it matches the vehicle/<VIN>/# scheme.
+pattern readwrite vehicle/%u/#
+
+# ── Backend service ───────────────────────────────────────
+# Fleet-wide access — this is the documented "skeleton key" credential.
+# Granted explicitly by identity, since the pattern above would otherwise
+# confine it to vehicle/backend-service/#.
+user backend-service
+topic readwrite vehicle/#
+
+
+
+cloud.conf:
+
+
+
+listener 8883
+cafile   C:\Users\user\Desktop\python_test_broker\app\certs\ca.crt
+certfile C:\Users\user\Desktop\python_test_broker\app\certs\broker.crt
+keyfile  C:\Users\user\Desktop\python_test_broker\app\certs\broker.key
+require_certificate true
+use_identity_as_username true
+
+allow_anonymous false
+acl_file C:\mosquitto_lab\cloud-acl.txt
+
+connection car-to-cloud
+address localhost:1884
+topic vehicle/TESTVIN123/# both 0
+
+
+car.conf:
+
+
+listener 1884
+allow_anonymous true
+
+## supposly in car.conf:
+connection car-to-cloud
+address localhost:8883
+topic vehicle/TESTVIN123/# both 0
+bridge_cafile   C:\Users\user\Desktop\python_test_broker\app\certs\ca.crt
+bridge_certfile C:\Users\user\Desktop\python_test_broker\app\certs\car.crt
+bridge_keyfile  C:\Users\user\Desktop\python_test_broker\app\certs\car.key
+
+
+missing:
+certificates signed by broker (public and private key)
